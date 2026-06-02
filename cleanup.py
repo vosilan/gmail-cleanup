@@ -195,9 +195,9 @@ def unsubscribe(url: str, one_click: bool, dry_run: bool) -> str:
         try:
             headers = {"User-Agent": "Mozilla/5.0"}
             if one_click:
-                _retry(requests.post, url, data={"List-Unsubscribe": "One-Click"}, headers=headers, timeout=10)
+                requests.post(url, data={"List-Unsubscribe": "One-Click"}, headers=headers, timeout=10)
             else:
-                _retry(requests.get, url, headers=headers, timeout=10)
+                requests.get(url, headers=headers, timeout=10)
             return f"{'POST' if one_click else 'GET'} → {url[:60]}"
         except Exception as e:
             return f"http failed: {e}"
