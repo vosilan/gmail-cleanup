@@ -31,14 +31,21 @@ _NETWORK_ERRORS = (
     OSError,
 )
 
+def _is_cert_error(exc):
+    while exc:
+        if isinstance(exc, ssl.CertificateError):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
 def _retry(fn, *args, retries=5, **kwargs):
     delay = 5
     for attempt in range(retries):
         try:
             return fn(*args, **kwargs)
-        except ssl.CertificateError:
-            raise
         except _NETWORK_ERRORS as e:
+            if _is_cert_error(e):
+                raise
             if attempt == retries - 1:
                 raise
             print(f"  [network error] {e} — повтор через {delay}с...")
