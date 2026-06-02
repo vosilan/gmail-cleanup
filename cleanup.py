@@ -12,8 +12,6 @@ Setup (once):
 """
 
 import argparse
-import base64
-import email.mime.text
 import os
 import pickle
 import re
@@ -178,28 +176,11 @@ def parse_unsub_header(header: str):
     return mailto, url
 
 
-def unsubscribe(service, mailto: str, url: str, one_click: bool, dry_run: bool) -> str:
-    """
-    Tries to unsubscribe. Returns a short status string.
-    Prefers mailto (most reliable), then one-click POST, then plain GET.
-    """
+def unsubscribe(url: str, one_click: bool, dry_run: bool) -> str:
     if dry_run:
-        if mailto:
-            return f"would email → {mailto}"
         if url:
             return f"would {'POST' if one_click else 'GET'} → {url[:60]}"
-        return "no unsub header"
-
-    if mailto:
-        try:
-            msg = email.mime.text.MIMEText("")
-            msg["to"] = mailto
-            msg["subject"] = "Unsubscribe"
-            raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-            _retry(service.users().messages().send(userId="me", body={"raw": raw}).execute)
-            return f"emailed → {mailto}"
-        except Exception as e:
-            return f"email failed: {e}"
+        return "no unsub link"
 
     if url:
         try:
@@ -231,8 +212,8 @@ def process_thread(service, tid: str, dry_run: bool, do_unsub: bool):
     label = sender.split("<")[0].strip()[:20]
     unsub_status = ""
 
-    if do_unsub and (mailto or url):
-        unsub_status = unsubscribe(service, mailto, url, one_click, dry_run)
+    if do_unsub and url:
+        unsub_status = unsubscribe(url, one_click, dry_run)
         print(f"  TRASH + UNSUB: [{label}] {subject[:55]}")
         print(f"    unsub: {unsub_status}")
     else:
