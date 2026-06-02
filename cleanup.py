@@ -17,11 +17,33 @@ import email.mime.text
 import os
 import pickle
 import re
+import socket
+import ssl
+import time
 
 import requests
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
+
+_NETWORK_ERRORS = (
+    socket.timeout, socket.gaierror,
+    ssl.SSLError, ConnectionResetError, ConnectionError,
+    requests.exceptions.ConnectionError, requests.exceptions.Timeout,
+    OSError,
+)
+
+def _retry(fn, *args, retries=5, **kwargs):
+    delay = 5
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except _NETWORK_ERRORS as e:
+            if attempt == retries - 1:
+                raise
+            print(f"  [network error] {e} — повтор через {delay}с...")
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 
@@ -108,7 +130,7 @@ def search_threads(service, query: str):
         kwargs = {"userId": "me", "q": query, "maxResults": 500}
         if page_token:
             kwargs["pageToken"] = page_token
-        resp = service.users().threads().list(**kwargs).execute()
+        resp = _retry(service.users().threads().list(**kwargs).execute)
         threads.extend(resp.get("threads", []))
         page_token = resp.get("nextPageToken")
         if not page_token:
@@ -118,10 +140,12 @@ def search_threads(service, query: str):
 
 def get_thread_info(service, thread_id: str):
     """Returns (subject, sender, unsub_mailto, unsub_url, unsub_one_click)."""
-    thread = service.users().threads().get(
-        userId="me", id=thread_id, format="metadata",
-        metadataHeaders=["Subject", "From", "List-Unsubscribe", "List-Unsubscribe-Post"]
-    ).execute()
+    thread = _retry(
+        service.users().threads().get(
+            userId="me", id=thread_id, format="metadata",
+            metadataHeaders=["Subject", "From", "List-Unsubscribe", "List-Unsubscribe-Post"]
+        ).execute
+    )
     subject = sender = unsub_header = ""
     unsub_one_click = False
     for msg in thread.get("messages", [])[:1]:
@@ -172,7 +196,7 @@ def unsubscribe(service, mailto: str, url: str, one_click: bool, dry_run: bool) 
             msg["to"] = mailto
             msg["subject"] = "Unsubscribe"
             raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-            service.users().messages().send(userId="me", body={"raw": raw}).execute()
+            _retry(service.users().messages().send(userId="me", body={"raw": raw}).execute)
             return f"emailed → {mailto}"
         except Exception as e:
             return f"email failed: {e}"
@@ -181,9 +205,9 @@ def unsubscribe(service, mailto: str, url: str, one_click: bool, dry_run: bool) 
         try:
             headers = {"User-Agent": "Mozilla/5.0"}
             if one_click:
-                requests.post(url, data={"List-Unsubscribe": "One-Click"}, headers=headers, timeout=10)
+                _retry(requests.post, url, data={"List-Unsubscribe": "One-Click"}, headers=headers, timeout=10)
             else:
-                requests.get(url, headers=headers, timeout=10)
+                _retry(requests.get, url, headers=headers, timeout=10)
             return f"{'POST' if one_click else 'GET'} → {url[:60]}"
         except Exception as e:
             return f"http failed: {e}"
@@ -192,7 +216,7 @@ def unsubscribe(service, mailto: str, url: str, one_click: bool, dry_run: bool) 
 
 
 def trash_thread(service, thread_id: str):
-    service.users().threads().trash(userId="me", id=thread_id).execute()
+    _retry(service.users().threads().trash(userId="me", id=thread_id).execute)
 
 
 def process_thread(service, tid: str, dry_run: bool, do_unsub: bool):
