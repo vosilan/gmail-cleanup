@@ -44,7 +44,7 @@ def _retry(fn, *args, retries=5, **kwargs):
         try:
             return fn(*args, **kwargs)
         except _NETWORK_ERRORS as e:
-            if _is_cert_error(e):
+            if isinstance(e, (ssl.CertificateError, requests.exceptions.SSLError)) or _is_cert_error(e):
                 raise
             if attempt == retries - 1:
                 raise
