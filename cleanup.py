@@ -36,6 +36,8 @@ def _retry(fn, *args, retries=5, **kwargs):
     for attempt in range(retries):
         try:
             return fn(*args, **kwargs)
+        except ssl.CertificateError:
+            raise
         except _NETWORK_ERRORS as e:
             if attempt == retries - 1:
                 raise
